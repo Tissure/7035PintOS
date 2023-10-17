@@ -600,14 +600,13 @@ void thread_check_sleep(int64_t ticks)
     return;
   enum intr_level old_level;
   old_level = intr_disable();
-  if (!list_empty(&sleep_list))
-  {
-    struct thread *t = list_entry(list_front(&sleep_list), struct thread, elem);
-    if (ticks >= t->wakeup_tick){
-      list_pop_front(&sleep_list);
-      thread_unblock(t);
-    }
+   
+  struct thread *t = list_entry(list_front(&sleep_list), struct thread, elem);
+  if (ticks >= t->wakeup_tick){
+    list_pop_front(&sleep_list);
+    thread_unblock(t);
   }
+  
   intr_set_level(old_level);
 }
 
