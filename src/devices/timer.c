@@ -165,25 +165,6 @@ timer_interrupt(struct intr_frame *args UNUSED)
   ticks++;
   thread_tick();
   thread_check_sleep(ticks);
-  // Check sleep list and global tick
-  // ASSERT(!intr_context());
-  // enum intr_level old_level;
-  // old_level = intr_disable();
-  // struct list_elem *e;
-  // for (e = list_begin(&sleep_list); e != list_end(&sleep_list); e = list_next(e))
-  // {
-  //   struct thread *sleeping = list_entry(e, struct thread, elem);
-  //   // find any thread to wake up
-  //   if (sleeping->wakeup_tick <= ticks)
-  //   {
-  //     // if found move to ready list
-  //     list_remove(e);
-  //     thread_unblock(sleeping);
-  //   }
-  // }
-  // schedule();
-  // intr_set_level(old_level);
-  // update global tick
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
