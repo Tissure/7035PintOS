@@ -1,15 +1,15 @@
 # COMP 7035
-                      +-----------------+
-                     	|     COMP 7035	  |
-                     	|   ASSIGNMENT 1	|
-                     	| DESIGN DOCUMENT |
-                     	+-----------------+
+                         +-----------------+
+                         |    COMP 7035    |
+                         |   ASSIGNMENT 1  |
+                         | DESIGN DOCUMENT |
+                         +-----------------+
 
 ---- GROUP ----
 
-Jeff Phan [jphan19@my.bcit.ca]
-Kyle Ng [kng168@my.bcit.ca]
-Jay Wang [jwang550@my.bcit.ca]   
+- Jeff Phan [jphan19@my.bcit.ca]
+- Kyle Ng [kng168@my.bcit.ca]
+- Jay Wang [jwang550@my.bcit.ca]   
 
 ---- PRELIMINARIES ----
 
@@ -18,15 +18,12 @@ Jay Wang [jwang550@my.bcit.ca]
 
 
 --- Jay’s References ---
-- https://github.com/dillstead/pintos/blob/assignment_1/src/threads/thread.c#L346 
-Got the idea to decrement SleepUntil from this person. Ultimately it didn’t fix the Issue with List Traversal.
+- https://github.com/dillstead/pintos/blob/assignment_1/src/threads/thread.c#L346 Got the idea to decrement SleepUntil from this person. Ultimately it didn’t fix the Issue with List Traversal.
 - https://www.khoury.northeastern.edu/home/skotthe/classes/cs5600/fall/2015/notes/pintos-project1.pdf 
-- https://stackoverflow.com/questions/3168306/print-text-instead-of-value-from-c-enum 
-Used this for clarity on the status of my stored threads in the blocked_list. 
+- https://stackoverflow.com/questions/3168306/print-text-instead-of-value-from-c-enum Used this for clarity on the status of my stored threads in the blocked_list. 
 - https://www.javatpoint.com/traversing-in-doubly-linked-list 
 - https://web.stanford.edu/class/cs140/projects/pintos/pintos_6.html#SEC100 
-- https://cs162.org/static/proj/pintos-docs/docs/synch/disable_interrupts/ 
-Wanted to get to this one, but ultimately didn’t use
+- https://cs162.org/static/proj/pintos-docs/docs/synch/disable_interrupts/ Wanted to get to this one, but ultimately didn’t use
 - https://www.researchgate.net/publication/319135949_Pintos-T01_Timer_Alarms_without_Busy_Waits_--_A_Guide_for_Students 
 - https://souzanurafrianto.wordpress.com/2011/05/06/avoiding-busy-wait-in-timer_sleep-on-pintos/ 
 
