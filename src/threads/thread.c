@@ -608,17 +608,6 @@ void thread_check_sleep(int64_t ticks)
     list_pop_front(&sleep_list);
     thread_unblock(t);
   }
-  //  schedule();
-  // struct thread *sleeping = list_entry(list_pop_front(&sleep_list), struct thread, elem);
-  // if (sleeping->wakeup_tick <= ticks)
-  // {
-  //   // if found move to ready list
-  //   thread_unblock(sleeping);
-  // }
-  // else
-  // {
-  //   list_push_back(&sleep_list, &sleeping->elem);
-  // }
   intr_set_level(old_level);
 }
 
