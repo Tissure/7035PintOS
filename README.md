@@ -1,104 +1,59 @@
-# CSCC69-Pintos
-                         +-----------------+
-                         |      CS 212     |
-                         |  SAMPLE PROJECT |
-                         | DESIGN DOCUMENT |
-                         +-----------------+
++-----------------+
+                     	|        COMP 7035	|
+                     	|     ASSIGNMENT 1	 |
+                     	| DESIGN DOCUMENT |
+                     	+-----------------+
 
 ---- GROUP ----
 
-Ben Pfaff <blp@stanford.edu>
+Jeff Phan jphan19@my.bcit.ca
+Kyle Ng
+Jay Wang [jwang550@my.bcit.ca]   
 
 ---- PRELIMINARIES ----
 
->> If you have any preliminary comments on your submission, notes for
->> the TAs, or extra credit, please give them here.
+Classmates
+https://www.youtube.com/watch?v=myO2bs5LMak&ab_channel=EE415%3AIntro.toOperatingSystem
+Jay’s References
+https://github.com/dillstead/pintos/blob/assignment_1/src/threads/thread.c#L346 
+Got the idea to decrement SleepUntil from this person. Ultimately it didn’t fix the Issue with List Traversal.
+https://www.khoury.northeastern.edu/home/skotthe/classes/cs5600/fall/2015/notes/pintos-project1.pdf 
+https://stackoverflow.com/questions/3168306/print-text-instead-of-value-from-c-enum 
+Used this for clarity on the status of my stored threads in the blocked_list. 
+https://www.javatpoint.com/traversing-in-doubly-linked-list 
+https://web.stanford.edu/class/cs140/projects/pintos/pintos_6.html#SEC100 
+https://cs162.org/static/proj/pintos-docs/docs/synch/disable_interrupts/ 
+Wanted to get to this one, but ultimately didn’t use
+https://www.researchgate.net/publication/319135949_Pintos-T01_Timer_Alarms_without_Busy_Waits_--_A_Guide_for_Students 
+https://souzanurafrianto.wordpress.com/2011/05/06/avoiding-busy-wait-in-timer_sleep-on-pintos/ 
 
-(This is a sample design document.)
 
->> Please cite any offline or online sources you consulted while
->> preparing your submission, other than the Pintos documentation,
->> course text, and lecture notes.
 
-None.
-
-                                 JOIN
-                                 ====
+                             	Timer Sleep
+                             	====
 
 ---- DATA STRUCTURES ----
 
->> Copy here the declaration of each new or changed `struct' or `struct'
->> member, global or static variable, `typedef', or enumeration.
->> Identify the purpose of each in 25 words or less.
+Added to struct thread to allow each thread to store its own wakeup time in ticks:
+ int64_t wakeup_tick; /* Tick to wake up at*/
 
-A "latch" is a new synchronization primitive.  Acquires block
-until the first release.  Afterward, all ongoing and future
-acquires pass immediately.
-
-    /* Latch. */
-    struct latch 
-      {
-        bool released;              /* Released yet? */
-        struct lock monitor_lock;   /* Monitor lock. */
-        struct condition rel_cond;  /* Signaled when released. */
-      };
-
-Added to struct thread:
-
-    /* Members for implementing thread_join(). */
-    struct latch ready_to_die;   /* Release when thread about to die. */
-    struct semaphore can_die;    /* Up when thread allowed to die. */
-    struct list children;        /* List of child threads. */
-    list_elem children_elem;     /* Element of `children' list. */
+Added to thread.c to store sleeping threads:
+static struct list sleep_list;
 
 ---- ALGORITHMS ----
 
->> Briefly describe your implementation of thread_join() and how it
->> interacts with thread termination.
+thread_sleep() sets the internal timer (wakeup_tick) signifying the time for which we then wake up this thread. It then inserts this thread into sleep_list using list_insert_ordered, then setting its status to THREAD_BLOCKED.
 
-thread_join() finds the joined child on the thread's list of
-children and waits for the child to exit by acquiring the child's
-ready_to_die latch.  When thread_exit() is called, the thread
-releases its ready_to_die latch, allowing the parent to continue.
+thread_check_sleep()  is called by every tick tick_interrupt(). It checks the first element in sleep_list if it is time to wake up this thread.
+
+We provide thread_wakeup_less (Comparator) function to list_insert_ordered() for inserting into a list such that it is sorted.
 
 ---- SYNCHRONIZATION ----
 
->> Consider parent thread P with child thread C.  How do you ensure
->> proper synchronization and avoid race conditions when P calls wait(C)
->> before C exits?  After C exits?  How do you ensure that all resources
->> are freed in each case?  How about when P terminates without waiting,
->> before C exits?  After C exits?  Are there any special cases?
-
-C waits in thread_exit() for P to die before it finishes its own
-exit, using the can_die semaphore "down"ed by C and "up"ed by P as
-it exits.  Regardless of whether whether C has terminated, there
-is no race on wait(C), because C waits for P's permission before
-it frees itself.
-
-Regardless of whether P waits for C, P still "up"s C's can_die
-semaphore when P dies, so C will always be freed.  (However,
-freeing C's resources is delayed until P's death.)
-
-The initial thread is a special case because it has no parent to
-wait for it or to "up" its can_die semaphore.  Therefore, its
-can_die semaphore is initialized to 1.
+We want to prevent context switching when we are adding to sleep_list as we do not want to have a context switch when a new thread is added to the sleep list, but has not been blocked yet. To prevent this we made the adding and blocking atomic by disabling interrupts and ensuring that each entry to the sleep list is properly blocked.
 
 ---- RATIONALE ----
 
->> Critique your design, pointing out advantages and disadvantages in
->> your design choices.
+The original implementation of timer_sleep() used busy waiting to pause the thread. This method worked but is expensive as it uses CPU time. Instead we disable the thread directly by blocking it and putting it on a blocked list. By doing so we are able to free up CPU time for other tasks. 
 
-This design has the advantage of simplicity.  Encapsulating most
-of the synchronization logic into a new "latch" structure
-abstracts what little complexity there is into a separate layer,
-making the design easier to reason about.  Also, all the new data
-members are in `struct thread', with no need for any extra dynamic
-allocation, etc., that would require extra management code.
-
-On the other hand, this design is wasteful in that a child thread
-cannot free itself before its parent has terminated.  A parent
-thread that creates a large number of short-lived child threads
-could unnecessarily exhaust kernel memory.  This is probably
-acceptable for implementing kernel threads, but it may be a bad
-idea for use with user processes because of the larger number of
-resources that user processes tend to own.
+However, this design requires disabling interrupts when adding to the sleep list as well  as blocking and unblocking threads. By disabling interrupts we force the OS to run this thread only ignoring any other action. This means actions like I/O are not able to run while manipulating the thread.
