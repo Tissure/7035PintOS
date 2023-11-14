@@ -54,6 +54,7 @@ static long long idle_ticks;   /* # of timer ticks spent idle. */
 static long long kernel_ticks; /* # of timer ticks in kernel threads. */
 static long long user_ticks;   /* # of timer ticks in user programs. */
 
+
 /* Scheduling. */
 #define TIME_SLICE 4          /* # of timer ticks to give each thread. */
 static unsigned thread_ticks; /* # of timer ticks since last yield. */
@@ -75,6 +76,7 @@ static void schedule(void);
 void thread_schedule_tail(struct thread *prev);
 bool thread_wakeup_less(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 static tid_t allocate_tid(void);
+void thread_get_load_avg();
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -103,6 +105,10 @@ void thread_init(void)
   init_thread(initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid();
+  load_avg = 0;
+  nice = 0;
+  priority = 0;
+  recent_cpu = 0;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -136,6 +142,15 @@ void thread_tick(void)
 #endif
   else
     kernel_ticks++;
+
+    // Check every 1 second (TIMER_FREQ = 100) to recalculate Average Sytem Load (load_avg) 
+    if (timer_tick() % 100 == 0){
+        // Update load_avg every second
+        thread_calculate_load_avg();
+
+        // Pass the function in, Recalculate every running or ready to run thread's recent_cpu
+        thread_foreach(thread_calculate_recent_cpu, NULL);
+    }
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
@@ -354,15 +369,59 @@ int thread_get_nice(void)
 /* Returns 100 times the system load average. */
 int thread_get_load_avg(void)
 {
-  /* Not yet implemented. */
-  return 0;
+  
+  // Disable Interrupt
+  enum intr_level old_level = intr_disable;
+
+  // Do Calculations - fp * int
+  int temp = multiply_fp(thread_current()->load_avg, 100);
+  
+  // Convert back to in
+  int convertedTemp = convert_fp_to_int(temp);
+
+  // RE-enable interrupts - leaving critical section
+  intr_set_level(old_level);
+
+  return convertedTemp;
+}
+
+void thread_calculate_load_avg(void)
+{
+    int temp1 = multiply_fp_by_int(divide_fp_by_int(convert_int_to_fp(59),60), thread_current()->load_avg);
+    int temp2 = multiply_fp_by_int(divide_fp_by_int(convert_int_to_fp(1),60), list_size(&ready_list));
+    thread_current()->load_avg = add_fp(temp1, temp2);
+    return 0;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void)
 {
-  /* Not yet implemented. */
+  // Disable Interrupt
+  enum intr_level old_level = intr_disable;
+
+  // Do Calculations - fp * int
+  int temp = multiply_fp(thread_current()->recent_cpu, 100);
+  
+  // Convert back to in
+  int convertedTemp = convert_fp_to_int(temp);
+
+  // RE-enable interrupts - leaving critical section
+  intr_set_level(old_level);
+
   return 0;
+}
+
+void thread_calculate_recent_cpu(struct thread* t, void* a){
+      
+    int temp1 = multiply_fp(thread_current()->load_avg, 2);
+    int temp2 = add_fp(temp1, 1);
+
+    // Standford doc cautioned us to calculate coefficient first
+    int coefficient = divid_fp(temp1, temp2);
+    int coefficient2 = multiply_fp(coefficient, thread_current()->recent_cpu);
+    
+    t->recent_cpu = add_fp(coefficient2, thread_current()->nice);
+
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
