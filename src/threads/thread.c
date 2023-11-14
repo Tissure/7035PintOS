@@ -253,7 +253,18 @@ tid_t thread_create(const char *name, int priority,
   {
     // set nice from aux
     int *info = aux;
-    t->nice = info[2];
+    t->nice = thread_current()->nice;
+    t->recent_cpu = thread_current()->recent_cpu;
+    int priority = PRI_MAX - convert_fp_to_integer_rounded((t->recent_cpu) / 4) - (t->nice) * 2;
+    if (priority > PRI_MAX)
+    {
+      priority = PRI_MAX;
+    }
+    if (priority < PRI_MIN)
+    {
+      priority = PRI_MIN;
+    }
+    t->priority = priority;
   }
 
   /* Stack frame for kernel_thread(). */
