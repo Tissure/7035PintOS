@@ -4,6 +4,8 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include "devices/timer.h"
+#include "threads/fixed-point.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -54,10 +56,10 @@ static long long idle_ticks;   /* # of timer ticks spent idle. */
 static long long kernel_ticks; /* # of timer ticks in kernel threads. */
 static long long user_ticks;   /* # of timer ticks in user programs. */
 
-
 /* Scheduling. */
 #define TIME_SLICE 4          /* # of timer ticks to give each thread. */
 static unsigned thread_ticks; /* # of timer ticks since last yield. */
+static int load_avg = 0;
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -77,8 +79,9 @@ void thread_schedule_tail(struct thread *prev);
 bool thread_wakeup_less(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 bool cmp_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 static tid_t allocate_tid(void);
-void thread_get_load_avg();
-
+void thread_calculate_load_avg(void);
+void thread_calculate_recent_cpu(struct thread *t, void *a);
+void update_priority(void);
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -106,10 +109,10 @@ void thread_init(void)
   init_thread(initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid();
-  load_avg = 0;
-  nice = 0;
-  priority = 0;
-  recent_cpu = 0;
+  // load_avg = 0;
+  // nice = 0;
+  // priority = 0;
+  // recent_cpu = 0;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -144,19 +147,27 @@ void thread_tick(void)
   else
     kernel_ticks++;
 
-
-    // Check every 1 second (TIMER_FREQ = 100) to recalculate Average Sytem Load (load_avg) 
-    if (timer_tick() % 100 == 0){
-        // Update load_avg every second
-        thread_calculate_load_avg();
-
-        // Pass the function in, Recalculate every running or ready to run thread's recent_cpu
-        thread_foreach(thread_calculate_recent_cpu, NULL);
+  if (thread_mlfqs)
+  {
+    if (t->status == THREAD_RUNNING)
+    {
+      t->recent_cpu = add_integer_to_fp(t->recent_cpu, 1);
     }
 
-  if (timer_ticks() % 4 == 0)
-  {
-    update_priority();
+    // Check every 1 second (TIMER_FREQ = 100) to recalculate Average Sytem Load (load_avg)
+    if (timer_ticks() % 100 == 0)
+    {
+      // Update load_avg every second
+      thread_calculate_load_avg();
+
+      // Pass the function in, Recalculate every running or ready to run thread's recent_cpu
+      thread_foreach(thread_calculate_recent_cpu, NULL);
+    }
+
+    if (timer_ticks() % TIME_SLICE == 0)
+    {
+      update_priority();
+    }
   }
 
   /* Enforce preemption. */
@@ -171,7 +182,7 @@ void thread_print_stats(void)
          idle_ticks, kernel_ticks, user_ticks);
 }
 
-void update_priority()
+void update_priority(void)
 {
   // priority = PRI_MAX - (recent_cpu/4) - (nice*2)
   // get list of elems
@@ -237,6 +248,13 @@ tid_t thread_create(const char *name, int priority,
   /* Initialize thread. */
   init_thread(t, name, priority);
   tid = t->tid = allocate_tid();
+
+  if (thread_mlfqs)
+  {
+    // set nice from aux
+    int *info = aux;
+    t->nice = info[2];
+  }
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame(t, sizeof *kf);
@@ -392,7 +410,11 @@ void thread_foreach(thread_action_func *func, void *aux)
 void thread_set_priority(int new_priority)
 {
   thread_current()->priority = new_priority;
+  // Disable Interrupt
+  enum intr_level old_level = intr_disable();
   list_sort(&ready_list, cmp_priority, NULL);
+  // RE-enable interrupts - leaving critical section
+  intr_set_level(old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -417,15 +439,15 @@ int thread_get_nice(void)
 /* Returns 100 times the system load average. */
 int thread_get_load_avg(void)
 {
- 
+
   // Disable Interrupt
-  enum intr_level old_level = intr_disable;
+  enum intr_level old_level = intr_disable();
 
   // Do Calculations - fp * int
-  int temp = multiply_fp(thread_current()->load_avg, 100);
-  
+  int temp = multiply_fp(load_avg, 100);
+
   // Convert back to in
-  int convertedTemp = convert_fp_to_int(temp);
+  int convertedTemp = convert_fp_to_integer(temp);
 
   // RE-enable interrupts - leaving critical section
   intr_set_level(old_level);
@@ -435,23 +457,23 @@ int thread_get_load_avg(void)
 
 void thread_calculate_load_avg(void)
 {
-    int temp1 = multiply_fp_by_int(divide_fp_by_int(convert_int_to_fp(59),60), thread_current()->load_avg);
-    int temp2 = multiply_fp_by_int(divide_fp_by_int(convert_int_to_fp(1),60), list_size(&ready_list));
-    thread_current()->load_avg = add_fp(temp1, temp2);
-    return 0;
+  int temp1 = multiply_fp_by_int(divide_fp_by_int(convert_int_to_fp(59), 60), load_avg);
+  int temp2 = multiply_fp_by_int(divide_fp_by_int(convert_int_to_fp(1), 60), list_size(&ready_list));
+  load_avg = add_fp(temp1, temp2);
+  // return 0;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void)
 {
   // Disable Interrupt
-  enum intr_level old_level = intr_disable;
+  enum intr_level old_level = intr_disable();
 
   // Do Calculations - fp * int
   int temp = multiply_fp(thread_current()->recent_cpu, 100);
-  
+
   // Convert back to in
-  int convertedTemp = convert_fp_to_int(temp);
+  int convertedTemp = convert_fp_to_integer(temp);
 
   // RE-enable interrupts - leaving critical section
   intr_set_level(old_level);
@@ -459,17 +481,17 @@ int thread_get_recent_cpu(void)
   return convertedTemp;
 }
 
-void thread_calculate_recent_cpu(struct thread* t, void* a){
-      
-    int temp1 = multiply_fp(thread_current()->load_avg, 2);
-    int temp2 = add_fp(temp1, 1);
+void thread_calculate_recent_cpu(struct thread *t, void *a UNUSED)
+{
 
-    // Standford doc cautioned us to calculate coefficient first
-    int coefficient = divid_fp(temp1, temp2);
-    int coefficient2 = multiply_fp(coefficient, thread_current()->recent_cpu);
-    
-    t->recent_cpu = add_fp(coefficient2, thread_current()->nice);
+  int temp1 = multiply_fp(load_avg, 2);
+  int temp2 = add_fp(temp1, 1);
 
+  // Standford doc cautioned us to calculate coefficient first
+  int coefficient = divide_fp(temp1, temp2);
+  int coefficient2 = multiply_fp(coefficient, thread_current()->recent_cpu);
+
+  t->recent_cpu = add_fp(coefficient2, thread_current()->nice);
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.

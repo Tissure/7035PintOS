@@ -95,7 +95,6 @@ struct thread
    /* Priority additions */
    int nice; /* Determines how "nice" the thread should be to other threads*/
    int recent_cpu;
-   int load_avg;
 
    /* Shared between thread.c and synch.c. */
    struct list_elem elem; /* List element. */

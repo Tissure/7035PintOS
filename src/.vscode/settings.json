@@ -59,6 +59,7 @@
   "files.associations": {
     "string.h": "c",
     "list.h": "c",
-    "stdint.h": "c"
+    "stdint.h": "c",
+    "*.inc": "c"
   }
 }

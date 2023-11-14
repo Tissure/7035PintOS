@@ -3,27 +3,27 @@
 
 #include <stdint.h>
 
-/*Convert n to fixed point*/
-static int convert_int_to_fp(int n);
-/*Convert x to integer (rounding toward zero)*/
-static int convert_fp_to_int(int x);
-/*Convert x to integer (rounding to nearest):*/
-static int convert_fp_to_int_round(int x);
-/*Add x and y:*/
-static int add_fp(int x, int y);
-/*Subtract y from x:*/
-static int subtract_fp(int x, int y);
-/*Add x and n:*/
-static int add_int_to_fp(int x, int n);
-/*Subtract n from x:*/
-static int subtract_int_from_fp(int x, int n);
-/*Multiply x by y:*/
-static int multiply_fp(int x, int y);
-/*Multiply x by n:*/
-static int multiply_fp_by_int(int x, int n);
-/*Divide x by y:*/
-static int divide_fp(int x, int y);
-/*Divide x by n:*/
-static int divide_fp_by_int(int x, int n);
+/*Convert inInteger to fixed point*/
+int convert_int_to_fp(int inInteger);
+/*Convert fpNumber to integer (rounding toward zero)*/
+int convert_fp_to_integer(int fpNumber);
+/*Convert fpNumber to integer (rounding to nearest)*/
+int convert_fp_to_integer_rounded(int fpNumber);
+/*Add fpNumOne and fpNumTwo*/
+int add_fp(int fpNumOne, int fpNumTwo);
+/*Subtract fpNumTwo from fpNumOne*/
+int subtract_fp(int fpNumOne, int fpNumTwo);
+/*Add fpNum and intNum*/
+int add_integer_to_fp(int fpNum, int intNum);
+/*Subtract fpNum from intNum:*/
+int subtract_integer_to_fp(int fpNum, int intNum);
+/*Multiply fpNumOne by fpNumTwo:*/
+int multiply_fp(int fpNumOne, int fpNumTwo);
+/*Multiply fpNumOne by intNum:*/
+int multiply_fp_by_int(int fpNumOne, int intNum);
+/*Divide fpNumOne by fpNumTwo*/
+int divide_fp(int fpNumOne, int fpNumTwo);
+/*Divide fpNumOne by intNum*/
+int divide_fp_by_int(int fpNumOne, int intNum);
 
 #endif /* threads/fixed-point.h */
