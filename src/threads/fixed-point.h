@@ -1,6 +1,8 @@
 #ifndef THREADS_FIXEDPOINT_H
 #define THREADS_FIXEDPOINT_H
 
+#include <stdint.h>
+
 /*Convert n to fixed point*/
 static int convert_int_to_fp(int n);
 /*Convert x to integer (rounding toward zero)*/
