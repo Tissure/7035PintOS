@@ -77,7 +77,7 @@ static void *alloc_frame(struct thread *, size_t size);
 static void schedule(void);
 void thread_schedule_tail(struct thread *prev);
 bool thread_wakeup_less(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
-bool cmp_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+
 static tid_t allocate_tid(void);
 void thread_calculate_load_avg(void);
 void thread_calculate_recent_cpu(struct thread *t, void *a);
@@ -104,12 +104,13 @@ void thread_init(void)
   list_init(&sleep_list);
   list_init(&all_list);
 
+  load_avg = 0;
+
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread();
   init_thread(initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid();
-  // load_avg = 0;
   // nice = 0;
   // priority = 0;
   // recent_cpu = 0;
@@ -394,7 +395,6 @@ void thread_yield(void)
   old_level = intr_disable();
   // Insert back into ready list in order.
   if (cur != idle_thread)
-    // list_push_back(&ready_list, &cur->elem);
     list_insert_ordered(&ready_list, &cur->elem, cmp_priority, NULL);
   cur->status = THREAD_READY;
   schedule();
@@ -596,6 +596,8 @@ init_thread(struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->curr_lock = NULL;
+  list_init(&t->held_lock);
 
   old_level = intr_disable();
   list_push_back(&all_list, &t->allelem);
@@ -766,6 +768,25 @@ bool cmp_priority(const struct list_elem *a,
   const struct thread *t_a = list_entry(a, struct thread, elem);
   const struct thread *t_b = list_entry(b, struct thread, elem);
   return t_a->priority > t_b->priority;
+}
+
+void rearrange_ready_list(struct thread *t)
+{
+  ASSERT(t->status == THREAD_READY);
+  enum intr_level old_level = intr_disable();
+  list_remove(&t->elem);
+  list_insert_ordered(&ready_list, &t->elem, cmp_priority, NULL);
+  intr_set_level(old_level);
+}
+
+void check_thread_yield(void)
+{
+  enum intr_level old_level = intr_disable();
+  bool val = !list_empty(&ready_list) && list_entry(list_back(&ready_list), struct thread, elem)->priority > thread_get_priority();
+  intr_set_level(old_level);
+
+  if (val)
+    thread_yield();
 }
 
 /* Offset of `stack' member within `struct thread'.
