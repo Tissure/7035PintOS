@@ -97,7 +97,9 @@ struct thread
 
    /* Priority additions */
    int nice; /* Determines how "nice" the thread should be to other threads*/
+   int64_t remaining_time;
    int recent_cpu;
+   int our_priority;
 
    /* Shared between thread.c and synch.c. */
    struct list_elem elem; /* List element. */

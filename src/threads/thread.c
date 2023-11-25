@@ -59,7 +59,7 @@ static long long user_ticks;   /* # of timer ticks in user programs. */
 /* Scheduling. */
 #define TIME_SLICE 4          /* # of timer ticks to give each thread. */
 static unsigned thread_ticks; /* # of timer ticks since last yield. */
-static int load_avg = 0;
+static int load_avg;
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -82,6 +82,7 @@ static tid_t allocate_tid(void);
 void thread_calculate_load_avg(void);
 void thread_calculate_recent_cpu(struct thread *t, void *a);
 void update_priority(void);
+void thread_update_priority_mlfqs(struct thread *t);
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -148,14 +149,17 @@ void thread_tick(void)
   else
     kernel_ticks++;
 
+  /* Enforce preemption. */
+  if (++thread_ticks >= TIME_SLICE)
+    intr_yield_on_return();
+
   if (thread_mlfqs)
   {
-    if (t->status == THREAD_RUNNING)
-    {
-      t->recent_cpu = add_integer_to_fp(t->recent_cpu, 1);
-    }
+    t->recent_cpu = add_integer_to_fp(t->recent_cpu, 1);
+    if (thread_ticks % TIME_SLICE == 0)
+      thread_update_priority_mlfqs(thread_current());
 
-    // Check every 1 second (TIMER_FREQ = 100) to recalculate Average Sytem Load (load_avg)
+    // // Check every 1 second (TIMER_FREQ = 100) to recalculate Average Sytem Load (load_avg)
     if (timer_ticks() % 100 == 0)
     {
       // Update load_avg every second
@@ -170,10 +174,6 @@ void thread_tick(void)
       update_priority();
     }
   }
-
-  /* Enforce preemption. */
-  if (++thread_ticks >= TIME_SLICE)
-    intr_yield_on_return();
 }
 
 /* Prints thread statistics. */
@@ -181,38 +181,6 @@ void thread_print_stats(void)
 {
   printf("Thread: %lld idle ticks, %lld kernel ticks, %lld user ticks\n",
          idle_ticks, kernel_ticks, user_ticks);
-}
-
-void update_priority(void)
-{
-  // priority = PRI_MAX - (recent_cpu/4) - (nice*2)
-  // get list of elems
-  // disable interrupts
-  // set priority in each thread
-  // set interrupts
-
-  enum intr_level old_level;
-
-  old_level = intr_disable();
-
-  struct list_elem *e;
-
-  for (e = list_begin(&all_list); e != list_end(&all_list);
-       e = list_next(e))
-  {
-    struct thread *t = list_entry(e, struct thread, allelem);
-    int priority = PRI_MAX - convert_fp_to_integer_rounded((t->recent_cpu) / 4) - (t->nice) * 2;
-    if (priority > PRI_MAX)
-    {
-      priority = PRI_MAX;
-    }
-    if (priority < PRI_MIN)
-    {
-      priority = PRI_MIN;
-    }
-    t->priority = priority;
-  }
-  intr_set_level(old_level);
 }
 
 /* Creates a new kernel thread named NAME with the given initial
@@ -250,23 +218,23 @@ tid_t thread_create(const char *name, int priority,
   init_thread(t, name, priority);
   tid = t->tid = allocate_tid();
 
-  if (thread_mlfqs)
-  {
-    // set nice from aux
-    int *info = aux;
-    t->nice = thread_current()->nice;
-    t->recent_cpu = thread_current()->recent_cpu;
-    int priority = PRI_MAX - convert_fp_to_integer_rounded((t->recent_cpu) / 4) - (t->nice) * 2;
-    if (priority > PRI_MAX)
-    {
-      priority = PRI_MAX;
-    }
-    if (priority < PRI_MIN)
-    {
-      priority = PRI_MIN;
-    }
-    t->priority = priority;
-  }
+  // if (thread_mlfqs)
+  // {
+  //   // set nice from aux
+  //   int *info = aux;
+  //   t->nice = thread_current()->nice;
+  //   t->recent_cpu = thread_current()->recent_cpu;
+  //   int priority = PRI_MAX - convert_fp_to_integer_rounded((t->recent_cpu) / 4) - (t->nice) * 2;
+  //   if (priority > PRI_MAX)
+  //   {
+  //     priority = PRI_MAX;
+  //   }
+  //   if (priority < PRI_MIN)
+  //   {
+  //     priority = PRI_MIN;
+  //   }
+  //   t->priority = priority;
+  // }
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame(t, sizeof *kf);
@@ -466,45 +434,6 @@ int thread_get_load_avg(void)
   return convertedTemp;
 }
 
-void thread_calculate_load_avg(void)
-{
-  int temp1 = multiply_fp_by_int(divide_fp_by_int(convert_int_to_fp(59), 60), load_avg);
-  int temp2 = multiply_fp_by_int(divide_fp_by_int(convert_int_to_fp(1), 60), list_size(&ready_list));
-  load_avg = add_fp(temp1, temp2);
-  // return 0;
-}
-
-/* Returns 100 times the current thread's recent_cpu value. */
-int thread_get_recent_cpu(void)
-{
-  // Disable Interrupt
-  enum intr_level old_level = intr_disable();
-
-  // Do Calculations - fp * int
-  int temp = multiply_fp(thread_current()->recent_cpu, 100);
-
-  // Convert back to in
-  int convertedTemp = convert_fp_to_integer(temp);
-
-  // RE-enable interrupts - leaving critical section
-  intr_set_level(old_level);
-
-  return convertedTemp;
-}
-
-void thread_calculate_recent_cpu(struct thread *t, void *a UNUSED)
-{
-
-  int temp1 = multiply_fp(load_avg, 2);
-  int temp2 = add_fp(temp1, 1);
-
-  // Standford doc cautioned us to calculate coefficient first
-  int coefficient = divide_fp(temp1, temp2);
-  int coefficient2 = multiply_fp(coefficient, thread_current()->recent_cpu);
-
-  t->recent_cpu = add_fp(coefficient2, thread_current()->nice);
-}
-
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by
@@ -596,6 +525,10 @@ init_thread(struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->curr_lock = NULL;
+
+  t->remaining_time = 0;
+  t->our_priority = priority;
   t->curr_lock = NULL;
   list_init(&t->held_lock);
 
@@ -761,13 +694,76 @@ bool thread_wakeup_less(const struct list_elem *a, const struct list_elem *b, vo
   return t_a->wakeup_tick < t_b->wakeup_tick;
 }
 
-bool cmp_priority(const struct list_elem *a,
-                  const struct list_elem *b,
-                  void *aux UNUSED)
+void thread_calculate_load_avg(void)
 {
-  const struct thread *t_a = list_entry(a, struct thread, elem);
-  const struct thread *t_b = list_entry(b, struct thread, elem);
-  return t_a->priority > t_b->priority;
+  int temp1 = multiply_fp_by_int(divide_fp_by_int(convert_int_to_fp(59), 60), load_avg);
+  int temp2 = multiply_fp_by_int(divide_fp_by_int(convert_int_to_fp(1), 60), list_size(&ready_list));
+  load_avg = add_fp(temp1, temp2);
+  // return 0;
+}
+
+void update_priority(void)
+{
+  // priority = PRI_MAX - (recent_cpu/4) - (nice*2)
+  // get list of elems
+  // disable interrupts
+  // set priority in each thread
+  // set interrupts
+
+  enum intr_level old_level;
+
+  old_level = intr_disable();
+
+  struct list_elem *e;
+
+  for (e = list_begin(&all_list); e != list_end(&all_list);
+       e = list_next(e))
+  {
+    struct thread *t = list_entry(e, struct thread, allelem);
+    int priority = PRI_MAX - convert_fp_to_integer_rounded((t->recent_cpu) / 4) - (t->nice) * 2;
+    if (priority > PRI_MAX)
+    {
+      priority = PRI_MAX;
+    }
+    if (priority < PRI_MIN)
+    {
+      priority = PRI_MIN;
+    }
+    t->priority = priority;
+  }
+  intr_set_level(old_level);
+}
+
+/* Returns 100 times the current thread's recent_cpu value. */
+int thread_get_recent_cpu(void)
+{
+  // Disable Interrupt
+  enum intr_level old_level = intr_disable();
+
+  // Do Calculations - fp * int
+  int temp = multiply_fp(thread_current()->recent_cpu, 100);
+
+  // Convert back to in
+  int convertedTemp = convert_fp_to_integer(temp);
+
+  // RE-enable interrupts - leaving critical section
+  intr_set_level(old_level);
+
+  return convertedTemp;
+}
+
+void thread_calculate_recent_cpu(struct thread *t, void *a UNUSED)
+{
+
+  int temp1 = multiply_fp(load_avg, 2);
+  int temp2 = add_fp(temp1, 1);
+
+  // Standford doc cautioned us to calculate coefficient first
+  int coefficient = divide_fp(temp1, temp2);
+  int coefficient2 = multiply_fp(coefficient, thread_current()->recent_cpu);
+
+  t->recent_cpu = add_fp(coefficient2, thread_current()->nice);
+  thread_update_priority_mlfqs(t);
 }
 
 void rearrange_ready_list(struct thread *t)
@@ -787,6 +783,24 @@ void check_thread_yield(void)
 
   if (val)
     thread_yield();
+}
+
+void thread_update_priority_mlfqs(struct thread *t)
+{
+  int new_priority = (int)convert_fp_to_integer_rounded(subtract_fp(convert_int_to_fp((PRI_MAX - ((t->nice) * 2))),
+                                                                    divide_fp_by_int(t->recent_cpu, 4)));
+  if (new_priority > PRI_MAX)
+    new_priority = PRI_MAX;
+  else if (new_priority < PRI_MIN)
+    new_priority = PRI_MIN;
+  t->priority = new_priority;
+}
+
+bool cmp_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  const struct thread *t_a = list_entry(a, struct thread, elem);
+  const struct thread *t_b = list_entry(b, struct thread, elem);
+  return t_a->priority > t_b->priority;
 }
 
 /* Offset of `stack' member within `struct thread'.
