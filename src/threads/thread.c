@@ -59,7 +59,7 @@ static long long user_ticks;   /* # of timer ticks in user programs. */
 /* Scheduling. */
 #define TIME_SLICE 4          /* # of timer ticks to give each thread. */
 static unsigned thread_ticks; /* # of timer ticks since last yield. */
-static int load_avg;
+static fixed_point load_avg;
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -79,10 +79,7 @@ void thread_schedule_tail(struct thread *prev);
 bool thread_wakeup_less(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 
 static tid_t allocate_tid(void);
-void thread_calculate_load_avg(void);
-void thread_calculate_recent_cpu(struct thread *t, void *a);
-void update_priority(void);
-void thread_update_priority_mlfqs(struct thread *t);
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -160,6 +157,7 @@ void thread_tick(void)
       thread_update_priority_mlfqs(thread_current());
 
     // // Check every 1 second (TIMER_FREQ = 100) to recalculate Average Sytem Load (load_avg)
+    enum intr_level old_level = intr_disable();
     if (timer_ticks() % 100 == 0)
     {
       // Update load_avg every second
@@ -168,12 +166,13 @@ void thread_tick(void)
       // Pass the function in, Recalculate every running or ready to run thread's recent_cpu
       thread_foreach(thread_calculate_recent_cpu, NULL);
     }
-
-    if (timer_ticks() % TIME_SLICE == 0)
-    {
-      update_priority();
-    }
+    intr_set_level(old_level);
+    // if (timer_ticks() % TIME_SLICE == 0)
+    // {
+    //   // update_priority();
+    // }
   }
+  thread_check_sleep(timer_ticks());
 }
 
 /* Prints thread statistics. */
@@ -388,12 +387,14 @@ void thread_foreach(thread_action_func *func, void *aux)
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority(int new_priority)
 {
-  thread_current()->priority = new_priority;
   // Disable Interrupt
   enum intr_level old_level = intr_disable();
-  list_sort(&ready_list, cmp_priority, NULL);
+  thread_current()->our_priority = new_priority;
+  update_priority(thread_current());
+  // list_sort(&ready_list, cmp_priority, NULL);
   // RE-enable interrupts - leaving critical section
   intr_set_level(old_level);
+  check_thread_yield();
 }
 
 /* Returns the current thread's priority. */
@@ -406,6 +407,8 @@ int thread_get_priority(void)
 void thread_set_nice(int nice)
 {
   thread_current()->nice = nice;
+  thread_update_priority_mlfqs(thread_current());
+  check_thread_yield();
 }
 
 /* Returns the current thread's nice value. */
@@ -420,16 +423,16 @@ int thread_get_load_avg(void)
 {
 
   // Disable Interrupt
-  enum intr_level old_level = intr_disable();
+  // enum intr_level old_level = intr_disable();
 
   // Do Calculations - fp * int
   int temp = multiply_fp(load_avg, 100);
 
   // Convert back to in
-  int convertedTemp = convert_fp_to_integer(temp);
+  int convertedTemp = convert_fp_to_integer_rounded(temp);
 
   // RE-enable interrupts - leaving critical section
-  intr_set_level(old_level);
+  // intr_set_level(old_level);
 
   return convertedTemp;
 }
@@ -525,7 +528,6 @@ init_thread(struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *)t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
-  t->curr_lock = NULL;
 
   t->remaining_time = 0;
   t->our_priority = priority;
@@ -648,42 +650,64 @@ allocate_tid(void)
 
 void thread_sleep(int64_t ticks)
 {
-  ASSERT(!intr_context());
-  enum intr_level old_level;
-  old_level = intr_disable();
+  // ASSERT(!intr_context());
+  // enum intr_level old_level;
+  // old_level = intr_disable();
   // if cur not idle thread
   struct thread *cur = thread_current();
   if (cur != idle_thread)
   {
     // store local tick to wake up
-    cur->wakeup_tick = ticks;
+    // cur->wakeup_tick = ticks;
+    cur->remaining_time = ticks;
     // change state of caller thread to blocked
-    list_insert_ordered(&sleep_list, &cur->elem, &thread_wakeup_less, NULL);
+    // list_insert_ordered(&sleep_list, &cur->elem, &thread_wakeup_less, NULL);
+    list_push_back(&sleep_list, &cur->sleep_element);
     thread_block();
     // update global tick
   }
 
   // schedule();
-  intr_set_level(old_level);
+  // intr_set_level(old_level);
   // DISABLE INTERRUPT WHEN MODIFYING LISTS
 }
 
 void thread_check_sleep(int64_t ticks)
 {
-  // Check sleep list and global tick
+  // // Check sleep list and global tick
   if (list_empty(&sleep_list))
     return;
-  enum intr_level old_level;
-  old_level = intr_disable();
 
-  struct thread *t = list_entry(list_front(&sleep_list), struct thread, elem);
-  if (ticks >= t->wakeup_tick)
+  // struct thread *t = list_entry(list_front(&sleep_list), struct thread, elem);
+  // if (ticks >= t->wakeup_tick)
+  // {
+  //   list_pop_front(&sleep_list);
+  //   thread_unblock(t);
+  // }
+
+  struct list_elem *elem = list_begin(&sleep_list);
+  struct list_elem *temporary;
+  while (elem != list_end(&sleep_list))
   {
-    list_pop_front(&sleep_list);
-    thread_unblock(t);
+    struct thread *t = list_entry(elem, struct thread, sleep_element);
+    temporary = elem;
+    elem = list_next(elem);
+    ASSERT(t->status == THREAD_BLOCKED);
+    // if (t->status == THREAD_BLOCKED && ticks >= t->wakeup_tick)
+    // {
+    //   list_remove(temporary);
+    //   thread_unblock(t);
+    // }
+    if (t->remaining_time > 0)
+    {
+      t->remaining_time--;
+      if (t->remaining_time <= 0)
+      {
+        thread_unblock(t);
+        list_remove(temporary);
+      }
+    }
   }
-
-  intr_set_level(old_level);
 }
 
 bool thread_wakeup_less(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
@@ -696,40 +720,27 @@ bool thread_wakeup_less(const struct list_elem *a, const struct list_elem *b, vo
 
 void thread_calculate_load_avg(void)
 {
-  int temp1 = multiply_fp_by_int(divide_fp_by_int(convert_int_to_fp(59), 60), load_avg);
-  int temp2 = multiply_fp_by_int(divide_fp_by_int(convert_int_to_fp(1), 60), list_size(&ready_list));
+  int waiting_threads = (list_size(&ready_list)) + ((thread_current() != idle_thread) ? 1 : 0);
+
+  // load_avg = ADD_FIXED_POINT (DIVIDE_FIXED_POINT (MULTIPLY_FIXED_POINT (load_avg, 59), 60),
+  //                            DIVIDE_FIXED_POINT (CONVERT_TO_FIXED_POINT (waiting_threads), 60));
+
+  int temp1 = divide_fp_by_int(multiply_fp_by_int(load_avg, 59), 60);
+  int temp2 = divide_fp_by_int(convert_int_to_fp(waiting_threads), 60);
   load_avg = add_fp(temp1, temp2);
   // return 0;
 }
 
-void update_priority(void)
+void update_priority(struct thread *t)
 {
-  // priority = PRI_MAX - (recent_cpu/4) - (nice*2)
-  // get list of elems
-  // disable interrupts
-  // set priority in each thread
-  // set interrupts
-
-  enum intr_level old_level;
-
-  old_level = intr_disable();
-
-  struct list_elem *e;
-
-  for (e = list_begin(&all_list); e != list_end(&all_list);
-       e = list_next(e))
+  enum intr_level old_level = intr_disable();
+  int our_priority = t->our_priority;
+  if (list_empty(&t->held_lock))
+    t->priority = our_priority;
+  else
   {
-    struct thread *t = list_entry(e, struct thread, allelem);
-    int priority = PRI_MAX - convert_fp_to_integer_rounded((t->recent_cpu) / 4) - (t->nice) * 2;
-    if (priority > PRI_MAX)
-    {
-      priority = PRI_MAX;
-    }
-    if (priority < PRI_MIN)
-    {
-      priority = PRI_MIN;
-    }
-    t->priority = priority;
+    int priority = list_entry(list_max(&t->held_lock, compare_locks, NULL), struct lock, elem)->max_p;
+    t->priority = our_priority > priority ? our_priority : priority;
   }
   intr_set_level(old_level);
 }
@@ -738,7 +749,7 @@ void update_priority(void)
 int thread_get_recent_cpu(void)
 {
   // Disable Interrupt
-  enum intr_level old_level = intr_disable();
+  // enum intr_level old_level = intr_disable();
 
   // Do Calculations - fp * int
   int temp = multiply_fp(thread_current()->recent_cpu, 100);
@@ -747,7 +758,7 @@ int thread_get_recent_cpu(void)
   int convertedTemp = convert_fp_to_integer(temp);
 
   // RE-enable interrupts - leaving critical section
-  intr_set_level(old_level);
+  // intr_set_level(old_level);
 
   return convertedTemp;
 }
@@ -755,14 +766,23 @@ int thread_get_recent_cpu(void)
 void thread_calculate_recent_cpu(struct thread *t, void *a UNUSED)
 {
 
-  int temp1 = multiply_fp(load_avg, 2);
-  int temp2 = add_fp(temp1, 1);
+  // t->recent_cpu = ADD_INTEGER(, t->nice);
+
+  // DIVIDE_INTEGER(, )
+  // MULTIPLY_INTEGER(MULTIPLY_FIXED_POINT(load_avg, 2), t->recent_cpu)
+  // ADD_INTEGER(MULTIPLY_FIXED_POINT(load_avg, 2), 1)
+
+  fixed_point double_avg = multiply_fp_by_int(load_avg, 2);
+  fixed_point denom = add_integer_to_fp(double_avg, 1);
 
   // Standford doc cautioned us to calculate coefficient first
-  int coefficient = divide_fp(temp1, temp2);
-  int coefficient2 = multiply_fp(coefficient, thread_current()->recent_cpu);
+  // int coefficient = divide_fp(temp1, temp2);
+  // int coefficient2 = multiply_fp(coefficient, thread_current()->recent_cpu);
 
-  t->recent_cpu = add_fp(coefficient2, thread_current()->nice);
+  fixed_point coefficient = divide_fp(double_avg, denom);
+  fixed_point coefficient2 = multiply_fp(coefficient, t->recent_cpu);
+
+  t->recent_cpu = add_integer_to_fp(coefficient2, thread_current()->nice);
   thread_update_priority_mlfqs(t);
 }
 
@@ -788,7 +808,7 @@ void check_thread_yield(void)
 void thread_update_priority_mlfqs(struct thread *t)
 {
   int new_priority = (int)convert_fp_to_integer_rounded(subtract_fp(convert_int_to_fp((PRI_MAX - ((t->nice) * 2))),
-                                                                    divide_fp_by_int(t->recent_cpu, 4)));
+                                                                    divide_fp(t->recent_cpu, 4)));
   if (new_priority > PRI_MAX)
     new_priority = PRI_MAX;
   else if (new_priority < PRI_MIN)
