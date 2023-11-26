@@ -166,7 +166,6 @@ void thread_tick(void)
       // Pass the function in, Recalculate every running or ready to run thread's recent_cpu
       thread_foreach(thread_calculate_recent_cpu, NULL);
     }
-    intr_set_level(old_level);
     // if (timer_ticks() % TIME_SLICE == 0)
     // {
     //   // update_priority();
@@ -254,10 +253,14 @@ tid_t thread_create(const char *name, int priority,
   thread_unblock(t);
 
   /*Compare priorities of current and new thread. Yield if new has higher prio.*/
-  if (thread_current()->priority < t->priority)
-  {
-    thread_yield();
-  }
+
+  enum intr_level old_level = intr_disable ();
+  bool val = !list_empty (&ready_list) && list_entry (list_back (&ready_list), struct thread, elem)->priority > thread_get_priority ();
+  intr_set_level (old_level);
+
+  if (val)
+      thread_yield ();
+
   return tid;
 }
 
@@ -818,9 +821,7 @@ void thread_update_priority_mlfqs(struct thread *t)
 
 bool cmp_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
-  const struct thread *t_a = list_entry(a, struct thread, elem);
-  const struct thread *t_b = list_entry(b, struct thread, elem);
-  return t_a->priority > t_b->priority;
+  return list_entry (a, struct thread, elem)->priority <= list_entry (b, struct thread, elem)->priority;
 }
 
 /* Offset of `stack' member within `struct thread'.

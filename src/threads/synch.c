@@ -92,7 +92,7 @@ bool sema_try_down(struct semaphore *sema)
     success = true;
   }
   else
-    success = false;
+  success = false;
   intr_set_level(old_level);
 
   return success;
