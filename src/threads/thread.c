@@ -157,15 +157,15 @@ void thread_tick(void)
       thread_update_priority_mlfqs(thread_current());
 
     // // Check every 1 second (TIMER_FREQ = 100) to recalculate Average Sytem Load (load_avg)
-    enum intr_level old_level = intr_disable();
-    if (timer_ticks() % 100 == 0)
-    {
-      // Update load_avg every second
-      thread_calculate_load_avg();
+    // enum intr_level old_level = intr_disable();
+    // if (timer_ticks() % 100 == 0)
+    // {
+    //   // Update load_avg every second
+    //   thread_calculate_load_avg();
 
-      // Pass the function in, Recalculate every running or ready to run thread's recent_cpu
-      thread_foreach(thread_calculate_recent_cpu, NULL);
-    }
+    //   // Pass the function in, Recalculate every running or ready to run thread's recent_cpu
+    //   thread_foreach(thread_calculate_recent_cpu, NULL);
+    // }
     // if (timer_ticks() % TIME_SLICE == 0)
     // {
     //   // update_priority();
@@ -806,6 +806,19 @@ void check_thread_yield(void)
 
   if (val)
     thread_yield();
+}
+
+void timer_freq_tick (void)
+{
+    enum intr_level old_level = intr_disable();
+   
+      // Update load_avg every second
+      thread_calculate_load_avg();
+
+      // Pass the function in, Recalculate every running or ready to run thread's recent_cpu
+      thread_foreach(thread_calculate_recent_cpu, NULL);
+    
+      intr_set_level(old_level);
 }
 
 void thread_update_priority_mlfqs(struct thread *t)
