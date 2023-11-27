@@ -174,7 +174,7 @@ timer_interrupt(struct intr_frame *args UNUSED)
   // intr_set_level(old_level);
   if (thread_mlfqs && ticks%TIMER_FREQ==0)
   {
-    timer_freq_tick();
+    tick_every_second();
   }
   
   thread_tick();
